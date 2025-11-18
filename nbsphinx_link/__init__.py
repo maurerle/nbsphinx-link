@@ -209,7 +209,8 @@ class LinkedNotebookParser(NotebookParser):
         else:
             formats.setdefault(
                 '.nblink',
-                lambda s: nbformat.reads(s, as_version=_ipynbversion))
+                formats.setdefault('.nblink', ['nbformat.reads', {'as_version': _ipynbversion}])
+            )
 
         try:
             include_file = io.FileInput(source_path=path, encoding='utf8')
