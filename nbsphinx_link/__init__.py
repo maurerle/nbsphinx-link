@@ -24,7 +24,6 @@ import os
 import shutil
 from pathlib import Path
 
-import nbformat
 from docutils import io, utils
 from docutils.nodes import document as ddocument
 from docutils.utils.error_reporting import ErrorString, SafeString
@@ -67,7 +66,7 @@ def copy_file(src, dest, document):
     try:
         shutil.copy(src, dest)
         register_dependency(src, document)
-    except (OSError) as e:
+    except OSError as e:
         logger.warning("The the file %s couldn't be copied. Error:\n %s", src, e)
 
 
@@ -122,19 +121,15 @@ def collect_extra_media(extra_media, source_file, nb_path, document):
     source_dir = os.path.dirname(source_file)
     if not isinstance(extra_media, list):
         logger.warning(
-            'The "extra-media", defined in {} needs to be a list of paths. '
-            'The current value is:\n{}'.format(source_file, extra_media)
+            f'The "extra-media", defined in {source_file} needs to be a list of paths. '
+            f"The current value is:\n{extra_media}"
         )
     for extract_media_path in extra_media:
         if os.path.isabs(extract_media_path):
             src_path = extract_media_path
         else:
-            extract_media_relpath = os.path.join(
-                source_dir, extract_media_path
-            )
-            src_path = os.path.normpath(
-                os.path.join(source_dir, extract_media_relpath)
-            )
+            extract_media_relpath = os.path.join(source_dir, extract_media_path)
+            src_path = os.path.normpath(os.path.join(source_dir, extract_media_relpath))
 
         dest_path = utils.relative_path(nb_path, src_path)
         dest_path = os.path.normpath(os.path.join(source_dir, dest_path))
@@ -143,10 +138,8 @@ def collect_extra_media(extra_media, source_file, nb_path, document):
             copy_and_register_files(src_path, dest_path, document)
         else:
             logger.warning(
-                'The path "{}", defined in {} "extra-media", '
-                'isn\'t a valid path.'.format(
-                    extract_media_path, source_file
-                )
+                f'The path "{extract_media_path}", defined in {source_file} "extra-media", '
+                "isn't a valid path."
             )
         if any_dirs:
             document.settings.env.note_reread()
@@ -173,7 +166,7 @@ class LinkedNotebookParser(NotebookParser):
     Further keys might be added in the future.
     """
 
-    supported = 'linked_jupyter_notebook',
+    supported = ("linked_jupyter_notebook",)
 
     def parse(self, inputstring: str, document: ddocument) -> None:
         """Parse the nblink file.
@@ -186,10 +179,10 @@ class LinkedNotebookParser(NotebookParser):
         source_file = Path(env.docname)
         source_dir = source_file.parent
 
-        abs_path = (source_dir / link['path']).resolve()
+        abs_path = (source_dir / link["path"]).resolve()
         path = Path(utils.relative_path(None, abs_path))
 
-        extra_media = link.get('extra-media', None)
+        extra_media = link.get("extra-media", None)
         if extra_media:
             collect_extra_media(extra_media, source_file, path, document)
 
@@ -197,7 +190,7 @@ class LinkedNotebookParser(NotebookParser):
 
         target_root = env.config.nbsphinx_link_target_root or Path.cwd()
         target = abs_path.relative_to(target_root, walk_up=True)
-        env.metadata[env.docname]['nbsphinx-link-target'] = target
+        env.metadata[env.docname]["nbsphinx-link-target"] = target
 
         # Copy parser from nbsphinx for our cutom format
         try:
@@ -206,34 +199,39 @@ class LinkedNotebookParser(NotebookParser):
             pass
         else:
             formats.setdefault(
-                '.nblink',
-                formats.setdefault('.nblink', ['nbformat.reads', {'as_version': _ipynbversion}])
+                ".nblink",
+                formats.setdefault(
+                    ".nblink", ["nbformat.reads", {"as_version": _ipynbversion}]
+                ),
             )
 
         try:
-            include_file = io.FileInput(source_path=path, encoding='utf8')
+            include_file = io.FileInput(source_path=path, encoding="utf8")
         except UnicodeEncodeError:
-            raise NotebookError(u'Problems with linked notebook "%s" path:\n'
-                                'Cannot encode input file path "%s" '
-                                '(wrong locale?).' %
-                                (env.docname, SafeString(path)))
-        except IOError as error:
-            raise NotebookError(u'Problems with linked notebook "%s" path:\n%s.' %
-                                (env.docname, ErrorString(error)))
+            raise NotebookError(
+                f'Problems with linked notebook "{env.docname}" path:\n'
+                f'Cannot encode input file path "{SafeString(path)}" '
+                "(wrong locale?)."
+            )
+        except OSError as error:
+            raise NotebookError(
+                f'Problems with linked notebook "{env.docname}" path:\n{ErrorString(error)}.'
+            )
 
         try:
             rawtext = include_file.read()
         except UnicodeError as error:
-            raise NotebookError(u'Problem with linked notebook "%s":\n%s' %
-                                (env.docname, ErrorString(error)))
-        return super(LinkedNotebookParser, self).parse(rawtext, document)
+            raise NotebookError(
+                f'Problem with linked notebook "{env.docname}":\n{ErrorString(error)}'
+            )
+        return super().parse(rawtext, document)
 
 
 def setup(app):
     """Initialize Sphinx extension."""
-    app.setup_extension('nbsphinx')
-    app.add_source_suffix('.nblink', 'linked_jupyter_notebook')
+    app.setup_extension("nbsphinx")
+    app.add_source_suffix(".nblink", "linked_jupyter_notebook")
     app.add_source_parser(LinkedNotebookParser)
-    app.add_config_value('nbsphinx_link_target_root', None, rebuild='env')
+    app.add_config_value("nbsphinx_link_target_root", None, rebuild="env")
 
-    return {'version': __version__, 'parallel_read_safe': True}
+    return {"version": __version__, "parallel_read_safe": True}

@@ -37,3 +37,9 @@ Home = "https://github.com/vidartf/nbsphinx-link"
 
 [tool.setuptools.packages.find]
 include = ["nbsphinx_link"]
+
+[tool.ruff]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "G", "PIE"]
+ignore = ["E501", "G004", "E731"]
