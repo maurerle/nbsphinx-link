@@ -184,7 +184,8 @@ class LinkedNotebookParser(NotebookParser):
         """
         link = json.loads(inputstring)
         env = document.settings.env
-        source_dir = os.path.dirname(env.doc2path(env.docname))
+        source_file = Path(env.docname)
+        source_dir = source_file.parent
 
         abs_path = os.path.normpath(os.path.join(source_dir, link['path']))
         path = utils.relative_path(None, abs_path)
