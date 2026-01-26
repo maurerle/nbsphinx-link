@@ -25,10 +25,11 @@ import shutil
 from pathlib import Path
 
 import nbformat
-from docutils import io, utils
+from docutils import io
 from docutils.nodes import document as ddocument
 from nbsphinx import NotebookError, NotebookParser, _ipynbversion
 from sphinx.util.logging import getLogger
+from sphinx.application import Sphinx
 
 from ._version import __version__
 
@@ -45,19 +46,19 @@ def register_dependency(file_path: Path, document: ddocument):
     document: docutils.nodes.document
         Parsed document instance.
     """
-    document.settings.record_dependencies.add(file_path)
+    document.settings.record_dependencies.add(str(file_path))
     document.settings.env.note_dependency(file_path)
 
 
-def copy_file(src, dest, document):
+def copy_file(src: Path, dest: Path, document: ddocument):
     """
     Copies a singe file from ``src`` to ``dest``.
 
     Parameters
     ----------
-    src : str
+    src : Path
         Path to the source file.
-    dest : str
+    dest : Path
         Path to the destination file or directory.
     document: docutils.nodes.document
         Parsed document instance.
@@ -70,7 +71,7 @@ def copy_file(src, dest, document):
         logger.warning("The the file %s couldn't be copied. Error:\n %s", src, e)
 
 
-def copy_and_register_files(src, dest, document):
+def copy_and_register_files(src: Path, dest: Path, document: ddocument):
     """
     Copies a directory or file from the path ``src`` to ``dest``
     and registers all files as dependency,
@@ -78,26 +79,26 @@ def copy_and_register_files(src, dest, document):
 
     Parameters
     ----------
-    src : str
+    src : Path
         Path to the source directory or file
-    dest : str
+    dest : Path
         Path to the destination directory or file
     document: docutils.nodes.document
         Parsed document instance.
     """
-    if os.path.isdir(src):
+    if src.is_dir():
         for root, _, filenames in os.walk(src):
-            dst_root = os.path.join(dest, os.path.relpath(root, src))
-            if filenames and not os.path.exists(dst_root):
+            dst_root = Path(dest) / Path(root).relative_to(src)
+            if filenames and not dst_root.exists():
                 os.makedirs(dst_root)
             for filename in filenames:
-                src_path = os.path.abspath(os.path.join(root, filename))
+                src_path = (Path(root) / filename).resolve()
                 copy_file(src_path, dst_root, document)
     else:
         copy_file(src, dest, document)
 
 
-def collect_extra_media(extra_media, source_file, nb_path, document):
+def collect_extra_media(extra_media: list[str], source_file: Path, nb_path: Path, document: ddocument):
     """
     Collects extra media defined in the .nblink file,  with the key
     'extra-media'. The extra media (i.e. images) need to be copied
@@ -118,27 +119,24 @@ def collect_extra_media(extra_media, source_file, nb_path, document):
     """
     any_dirs = False
     logger = getLogger(__name__)
-    source_dir = os.path.dirname(source_file)
+    source_dir = source_file.parent
     if not isinstance(extra_media, list):
         logger.warning(
             'The "extra-media", defined in {} needs to be a list of paths. '
             'The current value is:\n{}'.format(source_file, extra_media)
         )
     for extract_media_path in extra_media:
-        if os.path.isabs(extract_media_path):
-            src_path = extract_media_path
+        if Path(extract_media_path).is_absolute():
+            src_path = Path(extract_media_path)
         else:
-            extract_media_relpath = os.path.join(
-                source_dir, extract_media_path
-            )
-            src_path = os.path.normpath(
-                os.path.join(source_dir, extract_media_relpath)
-            )
+            extract_media_relpath = Path(source_dir) / extract_media_path
+            src_path = (Path(source_dir) / extract_media_relpath).resolve()
 
-        dest_path = utils.relative_path(nb_path, src_path)
-        dest_path = os.path.normpath(os.path.join(source_dir, dest_path))
-        if os.path.exists(src_path):
-            any_dirs = any_dirs or os.path.isdir(src_path)
+        dest_path = src_path.relative_to(nb_path)
+        dest_path = Path(source_dir) / dest_path
+
+        if src_path.exists():
+            any_dirs = any_dirs or src_path.is_dir()
             copy_and_register_files(src_path, dest_path, document)
         else:
             logger.warning(
@@ -186,16 +184,15 @@ class LinkedNotebookParser(NotebookParser):
         source_dir = source_file.parent
 
         abs_path = (env.srcdir / source_dir / link['path']).resolve()
-        path = Path(utils.relative_path(None, abs_path))
+        target_root = env.config.nbsphinx_link_target_root or Path.cwd()
+        target = abs_path.relative_to(target_root, walk_up=True)
 
         extra_media = link.get('extra-media', None)
         if extra_media:
-            collect_extra_media(extra_media, source_file, path, document)
+            collect_extra_media(extra_media, source_file, target, document)
 
-        register_dependency(path, document)
+        register_dependency(target, document)
 
-        target_root = env.config.nbsphinx_link_target_root or Path.cwd()
-        target = abs_path.relative_to(target_root, walk_up=True)
         env.metadata[env.docname]['nbsphinx-link-target'] = target
 
         # Copy parser from nbsphinx for our cutom format
@@ -207,11 +204,11 @@ class LinkedNotebookParser(NotebookParser):
             formats.setdefault('.nblink', ['nbformat.reads', {'as_version': _ipynbversion}])
 
         try:
-            include_file = io.FileInput(source_path=path, encoding='utf8')
+            include_file = io.FileInput(source_path=target, encoding='utf8')
         except UnicodeEncodeError:
             raise NotebookError(
                 f'Problems with linked notebook "{env.docname}" path:\n'
-                f'Cannot encode input file path "{path}" '
+                f'Cannot encode input file path "{target}" '
                 "(wrong locale?)."
             )
         except OSError as error:
@@ -229,7 +226,7 @@ class LinkedNotebookParser(NotebookParser):
         return super().parse(rawtext, document)
 
 
-def setup(app):
+def setup(app: Sphinx):
     """Initialize Sphinx extension."""
     app.setup_extension('nbsphinx')
     app.add_source_suffix('.nblink', 'linked_jupyter_notebook')
