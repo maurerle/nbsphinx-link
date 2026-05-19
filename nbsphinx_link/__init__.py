@@ -97,56 +97,73 @@ def copy_and_register_files(src, dest, document):
         copy_file(src, dest, document)
 
 
-def collect_extra_media(extra_media, source_file, nb_path, document):
-    """
-    Collects extra media defined in the .nblink file,  with the key
-    'extra-media'. The extra media (i.e. images) need to be copied
-    in order for nbsphinx to properly render the notebooks, since
-    nbsphinx assumes that the files are relative to the .nblink.
+def collect_extra_media(extra_media, source_file: Path, nb_path: Path, document: ddocument):
+    """Collect extra media defined in the .nblink file.
+
+    The paths in "extra-media" are intended to be interpreted relative to the
+    .nblink file location (similar to how nbsphinx interprets paths relative to
+    the notebook/source file).
+
+    Notes
+    -----
+    We must not use the current working directory for resolving these paths,
+    because Sphinx may be invoked from outside the docs folder, e.g.::
+
+        python -m sphinx docs/source docs/build
 
     Parameters
     ----------
     extra_media : list
         Paths to directories and/or files with extra media.
-    source_file : str
+    source_file : pathlib.Path
         Path to the .nblink file.
-    nb_path : str
-        Path to the notebook defined in the .nblink file , with the key 'path'.
+    nb_path : pathlib.Path
+        Path to the linked notebook.
     document: docutils.nodes.document
         Parsed document instance.
-
     """
     any_dirs = False
     logger = getLogger(__name__)
-    source_dir = os.path.dirname(source_file)
+
+    source_file = Path(source_file)
+    source_dir = source_file.parent
+
     if not isinstance(extra_media, list):
         logger.warning(
-            'The "extra-media", defined in {} needs to be a list of paths. '
-            'The current value is:\n{}'.format(source_file, extra_media)
+            'The "extra-media", defined in %s needs to be a list of paths. '
+            'The current value is:\n%s',
+            source_file,
+            extra_media,
         )
+        return
+
     for extract_media_path in extra_media:
-        if os.path.isabs(extract_media_path):
+        extract_media_path = Path(extract_media_path)
+
+        # Resolve paths relative to the .nblink file (not the CWD)
+        if extract_media_path.is_absolute():
             src_path = extract_media_path
         else:
-            extract_media_relpath = os.path.join(
-                source_dir, extract_media_path
-            )
-            src_path = os.path.normpath(
-                os.path.join(source_dir, extract_media_relpath)
-            )
+            # Do *not* resole against the .nblink location.
+            # "extra-media" paths are meant to be relative to the linked
+            # notebook path (which can be outside the Sphinx source tree).
+            src_path = (nb_path.parent / extract_media_path).resolve()
 
-        dest_path = utils.relative_path(nb_path, src_path)
-        dest_path = os.path.normpath(os.path.join(source_dir, dest_path))
-        if os.path.exists(src_path):
-            any_dirs = any_dirs or os.path.isdir(src_path)
-            copy_and_register_files(src_path, dest_path, document)
+        # Compute destination path such that it ends up where nbsphinx expects it
+        # (relative to the linked notebook location).
+        dest_rel = Path(utils.relative_path(str(nb_path), str(src_path)))
+        dest_path = (source_dir / dest_rel).resolve()
+
+        if src_path.exists():
+            any_dirs = any_dirs or src_path.is_dir()
+            copy_and_register_files(str(src_path), str(dest_path), document)
         else:
             logger.warning(
-                'The path "{}", defined in {} "extra-media", '
-                'isn\'t a valid path.'.format(
-                    extract_media_path, source_file
-                )
+                'The path "%s", defined in %s "extra-media", isn\'t a valid path.',
+                extract_media_path,
+                source_file,
             )
+
         if any_dirs:
             document.settings.env.note_reread()
 
