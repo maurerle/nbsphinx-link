@@ -51,8 +51,9 @@ def register_dependency(file_path: Path, document: ddocument):
 
 def copy_file(src, dest, document):
     """
-    Copies a singe file from ``src`` to ``dest``.
-
+    Copy a single file from ``src`` to ``dest``.
+    If source and destination resolve to the same file, copying is skipped.
+    
     Parameters
     ----------
     src : str
@@ -64,9 +65,19 @@ def copy_file(src, dest, document):
     """
     logger = getLogger(__name__)
     try:
-        shutil.copy(src, dest)
-        register_dependency(src, document)
-    except (OSError) as e:
+        src_path = Path(src).resolve()
+        dest_path = Path(dest).resolve()
+
+        # If dest is a directory, copy into it with the original file name.
+        if dest_path.is_dir() or str(dest).endswith(os.sep):
+            dest_file = (dest_path / src_path.name).resolve()
+        else:
+            dest_file = dest_path
+
+        if src_path != dest_file:
+            shutil.copy(src_path, dest)
+        register_dependency(src_path, document)
+    except OSError as e:
         logger.warning("The the file %s couldn't be copied. Error:\n %s", src, e)
 
 
